@@ -1,24 +1,74 @@
 version: 2.1
 jobs:
-  install: &shared-config
-    docker:
-      - image: cimg/node:14.10.1 # the primary container, where your job's commands are run
+  build: 
+    docker: &shared-docker  
+      - image: cimg/node:12.18.4 # the primary container, where your job's commands are run
         auth:
           username: mydockerhub-user
-          password: $DOCKERHUB_PASSWORD # context / project UI env-var reference
+          password: $DOCKERHUB_PASSWORD  # context / project UI env-var reference
     steps:
       - checkout # check out the code in the project directory
+      - restore_cache : 
+          keys :
+            - npm-v1-dependencies-{{ checksum "yarn.lock" }}
       - run: yarn global add node-gyp && yarn install
+      - save_cache:
+          paths:
+            - ./node_modules
+          key: npm-v1-dependencies-{{ checksum "yarn.lock" }}
+      
+ 
+  lint:
+   docker: *shared-docker
+   steps:
+      - checkout # check out the code in the project directory
+      - restore_cache : 
+          keys :
+            - npm-v1-dependencies-{{ checksum "yarn.lock" }}
+      - run: yarn lint && yarn format:check
+ 
+  ci-test:
+   docker: *shared-docker
+   steps:
+    - checkout # check out the code in the project directory
+    - restore_cache : 
+          keys :
+          - npm-v1-dependencies-{{ checksum "yarn.lock" }}
+    - run: yarn test:ci
+    
+
+  postgres-test:
+    docker:
+      - image: cimg/node:12.18.4
+        environment:
+          DATABASE_URL: postgres://psqluser:password@localhost:5432/psdb
+          JWT_SECRET: some string
+          API_HOST: localhost
+          API_PROTOCOL: http
+          API_PORT: 3000
+      - image: circleci/postgres:9.6.2-alpine
+        environment:
+          POSTGRES_USER: psqluser
+          POSTGRES_DB: psdb
+          POSTGRES_PASSWORD: password
+    steps:
+      - checkout # check out the code in the project directory
       - restore_cache:
           keys:
             - npm-v1-dependencies-{{ checksum "yarn.lock" }}
-      - run: yarn lint
-      - run: yarn test:ci
-  lint:
-    <<: *shared-config
-    steps:
-      - run: yarn lint && yarn format:check
-  test:
-    <<: *shared-config
-    steps:
-      - run: yarn test:ci
+      - run: yarn test:e2e
+ 
+workflows:
+  version: 2
+  build_test:
+    jobs :
+      - build
+      - lint:
+          requires:
+            - build
+      - ci-test:
+          requires:
+            - build
+      - postgres-test:
+          requires:
+            - build
