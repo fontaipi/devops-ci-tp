@@ -57,6 +57,20 @@ jobs:
           keys:
             - npm-v1-dependencies-{{ checksum "yarn.lock" }}
       - run: yarn test:e2e
+
+  generate-doc:
+    docker: *shared-docker
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - npm-v1-dependencies-{{ checksum "yarn.lock" }}
+      - run: yarn doc:build
+      - store_artifacts:
+          path: doc-server
+          destination: artifact-file
+
+
  
 workflows:
   version: 2
@@ -72,3 +86,7 @@ workflows:
       - postgres-test:
           requires:
             - build
+      - generate-doc:
+          requires:
+            - lint
+            - ci-test
